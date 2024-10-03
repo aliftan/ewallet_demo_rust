@@ -7,9 +7,9 @@ use tui::{
     Frame,
 };
 
-use crate::app::{App, AppState};
+use crate::controllers::app_controller::{AppController, AppState};
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &AppController) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -52,29 +52,21 @@ fn draw_main_menu<B: Backend>(f: &mut Frame<B>, area: Rect) {
     f.render_widget(menu, area);
 }
 
-fn draw_login<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_login<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let input = Paragraph::new(app.input.as_ref())
         .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Enter Username"),
-        );
+        .block(Block::default().borders(Borders::ALL).title("Enter Username"));
     f.render_widget(input, area);
 }
 
-fn draw_create_account<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_create_account<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let input = Paragraph::new(app.input.as_ref())
         .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Enter New Username"),
-        );
+        .block(Block::default().borders(Borders::ALL).title("Enter New Username"));
     f.render_widget(input, area);
 }
 
-fn draw_logged_in<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_logged_in<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let balance = app.get_balance().unwrap_or(0.0);
     let account_name = app.get_current_user().unwrap_or("Unknown");
     let items = vec![
@@ -96,29 +88,21 @@ fn draw_logged_in<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     f.render_widget(menu, area);
 }
 
-fn draw_deposit<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_deposit<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let input = Paragraph::new(app.input.as_ref())
         .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Enter Deposit Amount"),
-        );
+        .block(Block::default().borders(Borders::ALL).title("Enter Deposit Amount"));
     f.render_widget(input, area);
 }
 
-fn draw_withdraw<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_withdraw<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let input = Paragraph::new(app.input.as_ref())
         .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Enter Withdrawal Amount"),
-        );
+        .block(Block::default().borders(Borders::ALL).title("Enter Withdrawal Amount"));
     f.render_widget(input, area);
 }
 
-fn draw_transfer<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_transfer<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let title = if app.transfer_recipient.is_none() {
         "Enter Recipient Username"
     } else {
@@ -130,7 +114,7 @@ fn draw_transfer<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     f.render_widget(input, area);
 }
 
-fn draw_transactions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+fn draw_transactions<B: Backend>(f: &mut Frame<B>, app: &AppController, area: Rect) {
     let transactions = app.get_transactions().unwrap_or_default();
     let items: Vec<ListItem> = transactions
         .iter()
@@ -139,13 +123,10 @@ fn draw_transactions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
             let transaction_type = t.get("type").unwrap_or(&String::from("Unknown")).clone();
             let recipient = t.get("recipient").unwrap_or(&String::from("")).clone();
             let sender = t.get("sender").unwrap_or(&String::from("")).clone();
-            let previous_balance = t
-                .get("previous_balance")
-                .unwrap_or(&String::from("0"))
-                .clone();
+            let previous_balance = t.get("previous_balance").unwrap_or(&String::from("0")).clone();
             let new_balance = t.get("new_balance").unwrap_or(&String::from("0")).clone();
             let timestamp = t.get("timestamp").unwrap_or(&String::from("")).clone();
-
+            
             let description = match transaction_type.as_str() {
                 "deposit" => format!("Deposit: ${}", amount),
                 "withdraw" => format!("Withdrawal: ${}", amount),
@@ -153,13 +134,10 @@ fn draw_transactions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
                 "transfer_in" => format!("Received: ${} from {}", amount, sender),
                 _ => format!("Unknown transaction: ${}", amount),
             };
-
+            
             ListItem::new(vec![
                 Spans::from(description),
-                Spans::from(format!(
-                    "  Previous Balance: ${} | New Balance: ${}",
-                    previous_balance, new_balance
-                )),
+                Spans::from(format!("  Previous Balance: ${} | New Balance: ${}", previous_balance, new_balance)),
                 Spans::from(Span::styled(
                     format!("  {}", timestamp),
                     Style::default().fg(Color::DarkGray),
@@ -169,17 +147,13 @@ fn draw_transactions<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
         .collect();
 
     let transactions_list = List::new(items)
-        .block(
-            Block::default()
-                .title("Recent Transactions")
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title("Recent Transactions").borders(Borders::ALL))
         .style(Style::default().fg(Color::White));
 
     f.render_widget(transactions_list, area);
 }
 
-fn draw_messages<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn draw_messages<B: Backend>(f: &mut Frame<B>, app: &AppController) {
     if let Some((message, _)) = app.messages.last() {
         let message_area = Rect::new(10, f.size().height - 4, f.size().width - 20, 3);
         let message_widget = Paragraph::new(message.as_str())
