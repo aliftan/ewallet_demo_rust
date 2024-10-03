@@ -44,7 +44,7 @@ impl User {
 
     pub fn update_balance(conn: &Connection, username: &str, new_balance: f64) -> Result<()> {
         conn.execute(
-            "UPDATE users SET balance = ? WHERE username = ?",
+            "UPDATE users SET balance = ?1 WHERE username = ?2",
             params![new_balance, username],
         )?;
         Ok(())

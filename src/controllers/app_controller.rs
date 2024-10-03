@@ -3,7 +3,10 @@ use crossterm::event::KeyCode;
 use rusqlite::{Connection, Result};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use rand::Rng;
+use chrono::Utc;
 
+/// Main controller for the e-wallet application.
 pub struct AppController {
     pub current_state: AppState,
     pub input: String,
@@ -14,6 +17,7 @@ pub struct AppController {
     current_user: Option<String>,
 }
 
+/// Different states of the application.
 #[derive(PartialEq)]
 pub enum AppState {
     MainMenu,
@@ -27,6 +31,7 @@ pub enum AppState {
 }
 
 impl AppController {
+    /// Creates a new AppController instance and initializes the database.
     pub fn new() -> Result<Self> {
         let conn = Connection::open("ewallet.db")?;
         conn.execute(
@@ -38,7 +43,7 @@ impl AppController {
         )?;
         conn.execute(
             "CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY,
+                id TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
                 transaction_type TEXT NOT NULL,
                 amount REAL NOT NULL,
@@ -61,16 +66,25 @@ impl AppController {
         })
     }
 
+    fn generate_transaction_id(&self) -> String {
+        let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let random_num: u32 = rand::thread_rng().gen();
+        format!("{}-{}", timestamp, random_num)
+    }    
+
+    /// Adds a new message to the message queue.
     pub fn add_message(&mut self, message: String) {
         self.messages.push((message, Instant::now()));
     }
 
+    /// Removes expired messages from the message queue.
     pub fn clear_expired_messages(&mut self) {
         let now = Instant::now();
         self.messages
             .retain(|(_, timestamp)| now.duration_since(*timestamp) < self.message_timeout);
     }
 
+    /// Attempts to log in a user.
     pub fn login(&mut self, username: String) -> Result<bool> {
         if let Some(_user) = User::get(&self.conn, &username)? {
             self.current_user = Some(username);
@@ -81,8 +95,9 @@ impl AppController {
             self.add_message("User does not exist. Please try again.".to_string());
             Ok(false)
         }
-    }    
+    }
 
+    /// Attempts to create a new user account.
     pub fn create_account(&mut self, username: String) -> Result<bool> {
         if User::create(&self.conn, &username)? {
             self.current_user = Some(username);
@@ -97,12 +112,14 @@ impl AppController {
         }
     }
 
+    /// Logs out the current user.
     pub fn logout(&mut self) {
         self.current_user = None;
         self.current_state = AppState::MainMenu;
         self.add_message("Logged out successfully.".to_string());
     }
 
+    /// Processes a deposit for the current user.
     pub fn deposit(&mut self, amount: f64) -> Result<()> {
         if let Some(username) = &self.current_user {
             let previous_balance = self.get_balance()?;
@@ -110,7 +127,8 @@ impl AppController {
             User::update_balance(&self.conn, username, new_balance)?;
 
             let transaction = Transaction {
-                username: username.clone(),
+                id: self.generate_transaction_id(),
+                username: username.to_string(),
                 transaction_type: "deposit".to_string(),
                 amount,
                 recipient: None,
@@ -126,6 +144,7 @@ impl AppController {
         Ok(())
     }
 
+    /// Processes a withdrawal for the current user.
     pub fn withdraw(&mut self, amount: f64) -> Result<()> {
         if let Some(username) = &self.current_user {
             let previous_balance = self.get_balance()?;
@@ -133,7 +152,8 @@ impl AppController {
             User::update_balance(&self.conn, username, new_balance)?;
 
             let transaction = Transaction {
-                username: username.clone(),
+                id: self.generate_transaction_id(),
+                username: username.to_string(),
                 transaction_type: "withdraw".to_string(),
                 amount,
                 recipient: None,
@@ -149,6 +169,7 @@ impl AppController {
         Ok(())
     }
 
+    /// Checks if the current user can withdraw a specified amount.
     pub fn can_withdraw(&self, amount: f64) -> Result<bool> {
         if let Some(username) = &self.current_user {
             if let Some(user) = User::get(&self.conn, username)? {
@@ -161,13 +182,13 @@ impl AppController {
         }
     }
 
+    /// Processes a transfer between the current user and another user.
     pub fn transfer(&mut self, recipient: String, amount: f64) -> Result<bool> {
         if let (Some(sender_username), Some(recipient_user)) =
             (&self.current_user, User::get(&self.conn, &recipient)?)
         {
             let sender_previous_balance = self.get_balance()?;
-            
-            // Check if sender has sufficient balance
+    
             if sender_previous_balance < amount {
                 self.add_message(format!(
                     "Transfer failed. Insufficient funds. Your balance: ${:.2}",
@@ -184,11 +205,12 @@ impl AppController {
             User::update_balance(&self.conn, &recipient, recipient_new_balance)?;
     
             let sender_transaction = Transaction {
-                username: sender_username.clone(),
+                id: self.generate_transaction_id(),
+                username: sender_username.to_string(),
                 transaction_type: "transfer_out".to_string(),
                 amount,
                 recipient: Some(recipient.clone()),
-                sender: None,
+                sender: Some(sender_username.to_string()),
                 previous_balance: sender_previous_balance,
                 new_balance: sender_new_balance,
                 timestamp: chrono::Local::now().naive_local(),
@@ -196,11 +218,12 @@ impl AppController {
             Transaction::create(&self.conn, &sender_transaction)?;
     
             let recipient_transaction = Transaction {
+                id: self.generate_transaction_id(),
                 username: recipient.clone(),
                 transaction_type: "transfer_in".to_string(),
                 amount,
-                recipient: None,
-                sender: Some(sender_username.clone()),
+                recipient: Some(recipient.clone()),
+                sender: Some(sender_username.to_string()),
                 previous_balance: recipient_previous_balance,
                 new_balance: recipient_new_balance,
                 timestamp: chrono::Local::now().naive_local(),
@@ -218,6 +241,7 @@ impl AppController {
         }
     }    
 
+    /// Gets the balance of the current user.
     pub fn get_balance(&self) -> Result<f64> {
         if let Some(username) = &self.current_user {
             if let Some(user) = User::get(&self.conn, username)? {
@@ -230,6 +254,7 @@ impl AppController {
         }
     }
 
+    /// Gets the transactions of the current user.
     pub fn get_transactions(&self) -> Result<Vec<HashMap<String, String>>> {
         if let Some(username) = &self.current_user {
             Transaction::get_user_transactions(&self.conn, username)
@@ -238,10 +263,12 @@ impl AppController {
         }
     }
 
+    /// Gets the username of the current user.
     pub fn get_current_user(&self) -> Option<&str> {
         self.current_user.as_deref()
     }
 
+    /// Handles user input based on the current application state.
     pub fn handle_input(&mut self, key: KeyCode) -> Result<bool> {
         match self.current_state {
             AppState::MainMenu => match key {
